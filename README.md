@@ -1,88 +1,119 @@
-# voice-dictate
+# Wisper
 
-Локальне push-to-talk диктування для macOS (Apple Silicon). Тримаєш клавішу, говориш, відпускаєш — текст розпізнається локально (Whisper через MLX) і вставляється в поле, де стоїть курсор. Інтернет потрібен лише для першого завантаження моделі.
+Local push-to-talk dictation for macOS (Apple Silicon). Hold a key, speak, release — your speech is transcribed on-device with Whisper (via MLX) and typed into whatever text field has focus. An internet connection is only needed once, to download the model.
 
-## Встановлення
+- Works in any app: browsers, chats, editors, Spotlight, etc.
+- Ukrainian + English out of the box (language is picked per phrase).
+- Menu-bar app with a status icon; no audio ever leaves your Mac.
 
-Потрібен Python **3.11–3.12** (системний `/usr/bin/python3` 3.9 не підходить: немає готових wheel-ів для pyobjc/mlx). Найпростіше через [uv](https://docs.astral.sh/uv/):
+## Requirements
+
+- Mac with Apple Silicon (M1 or newer), macOS 13+
+- Python **3.11–3.12** for development (the system `/usr/bin/python3` 3.9 won't work — no prebuilt wheels for pyobjc/mlx)
+- Xcode Command Line Tools (`xcode-select --install`) — needed to build the app launcher
+
+## Setup
+
+The easiest way is [uv](https://docs.astral.sh/uv/):
 
 ```bash
 brew install uv
-cd voice-dictate
-rm -rf .venv
+cd wisper
 uv venv -p 3.12
 source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-## Застосунок у menu bar (Wisper.app)
+## Menu-bar app (for your own Mac)
 
 ```bash
-source .venv/bin/activate
-uv pip install -r requirements.txt   # додає rumps
-./build_app.sh                        # створює /Applications/Wisper.app
+./build_app.sh                 # creates /Applications/Wisper.app
 open /Applications/Wisper.app
 ```
 
-У верхньому барі з'явиться іконка: ⏳ модель вантажиться → 🎙 готово → 🔴 запис → 💭 розпізнавання.
-У меню: мова, модель (Turbo / Large), клавіша, авто-Enter, посимвольний друк, звуки, автозапуск при вході, лог.
-Налаштування зберігаються в `~/Library/Application Support/Wisper/settings.json`, лог — `~/Library/Logs/Wisper.log`.
+The menu-bar icon shows the current state: ⏳ loading model → 🎙 ready → 🔴 recording → 💭 transcribing.
 
-**Дозволи:** застосунок — це нова «програма» для macOS, тож дозволи треба дати саме **Wisper** (не терміналу): Microphone (спитає сам), Accessibility та Input Monitoring. Пункт меню «⚠️ Немає дозволу Accessibility» відкриє потрібну сторінку налаштувань. Після видачі — Вийти з Wisper і запустити знову.
+**Usage:** hold **Right Option**, speak, release. Press **Esc** while holding to cancel.
 
-`Wisper.app` — лише лаунчер: маленький нативний бінарник (компілюється `clang` під час `build_app.sh`, потрібні Xcode Command Line Tools), який вбудовує Python з `.venv` і запускає `menubar.py` з цієї папки. Тому macOS бачить процес як **Wisper**, а не python. Якщо перенесеш папку — перезапусти `build_app.sh`. Після змін у коді перезбирати не треба, достатньо перезапустити Wisper.
+**Menu:** permissions status, copy last text, language, hotkey, press Enter after inserting, type character by character, sounds, launch at login, personal dictionary, log.
 
-## Поділитися застосунком (автономна збірка)
+`Wisper.app` built this way is a thin launcher: a small native binary (compiled with `clang`) that embeds Python from this folder's `.venv` and runs `menubar.py`. After editing the code just restart Wisper — no rebuild needed. Re-run `build_app.sh` only if you move the project folder.
+
+### Permissions
+
+macOS treats Wisper as a separate app, so grant the permissions to **Wisper** (System Settings → Privacy & Security):
+
+- **Microphone** — asked automatically on first use
+- **Accessibility** — needed to insert text
+- **Input Monitoring** — needed to detect the hotkey
+
+The ⚠️ permissions item at the top of the menu opens the right settings page. Wisper picks up newly granted permissions without a restart.
+
+> Every rebuild with `build_app.sh` changes the app's signature, so macOS forgets the old grants. The script resets them; just enable Wisper again in Accessibility and Input Monitoring.
+
+## Sharing the app (self-contained build)
 
 ```bash
-./package_app.sh      # -> dist/Wisper.app і dist/Wisper.zip
+./package_app.sh      # -> dist/Wisper.app and dist/Wisper.zip
 ```
 
-`Wisper.zip` (~200–300 MB) містить усе: Python, бібліотеки й код. Надсилай цей файл. Модель (~3 GB) завантажиться під час першого запуску.
+`Wisper.zip` (~200 MB) contains everything — Python runtime, libraries and code — and doesn't depend on this folder. The Whisper model (~3 GB) is downloaded on first launch.
 
-Для отримувача:
-- Потрібен Mac на Apple Silicon (M1 і новіше) з macOS 13+.
-- Розпакувати й перетягнути `Wisper.app` у `/Applications`.
-- Застосунок не нотаризований Apple, тому при першому запуску macOS його заблокує. Тоді: System Settings → Privacy & Security → внизу «Wisper was blocked…» → **Open Anyway**. Або в терміналі: `xattr -dr com.apple.quarantine /Applications/Wisper.app`.
-- Дати дозволи: Microphone, Accessibility, Input Monitoring.
+For the person installing it:
 
-## Запуск з терміналу
+1. Unzip and drag `Wisper.app` into **Applications**.
+2. The app isn't notarized by Apple, so macOS blocks the first launch. Either go to System Settings → Privacy & Security → **Open Anyway**, or run:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Wisper.app
+   ```
+3. Wait for the menu-bar icon to turn from ⏳ to 🎙 (model download).
+4. Grant Microphone, Accessibility and Input Monitoring.
+
+## Personal dictionary
+
+Menu → **Dictionary…** opens `~/Library/Application Support/Wisper/dictionary.txt`. Changes apply immediately.
+
+```text
+# Hint words — one per line: names, terms, slang Whisper should know
+Wispr
+Kubernetes
+
+# Replacements — "what was recognized => what it should be" (whole words, case-insensitive)
+Віспар => Wispr
+```
+
+## Running from the terminal
 
 ```bash
 python dictate.py
 ```
 
-Перший запуск завантажує модель `whisper-large-v3-turbo` (~1.6 GB) у `~/.cache/huggingface`.
+When running this way, grant Microphone / Accessibility / Input Monitoring to your **terminal app** (Terminal, iTerm, Warp, VS Code…) and restart it.
 
-За замовчуванням: **тримай правий Option** → говори → відпусти. Esc під час запису — скасувати.
+### Options
 
-### Дозволи macOS (обов'язково)
-
-System Settings → Privacy & Security, додай **свій термінал** (Terminal / iTerm / Warp) у:
-- **Microphone**
-- **Accessibility** (щоб вставляти текст)
-- **Input Monitoring** (щоб ловити хоткей)
-
-Після видачі дозволів перезапусти термінал.
-
-## Опції
-
-| Прапорець | Що робить |
+| Flag | Description |
 |---|---|
-| `--key alt_r` | клавіша: `alt_r`, `ctrl_r`, `cmd_r`, `shift_r`, `f13`… |
-| `--lang uk,en` | дозволені мови (за замовчуванням `uk,en` — модель обирає тільки між ними). `--lang uk` — завжди українська, `--lang ""` — будь-яка мова |
-| `--enter` | натиснути Enter після вставки (одразу відправка в чат) |
-| `--mode type` | друкувати посимвольно замість Cmd+V |
-| `--prompt "ганк, мід, джангл, Xerath"` | підказка зі словником — краще розпізнає терміни |
-| `--model large` | модель: `turbo` (за замовчуванням, швидка), `large` (найточніша, краще визначає мову, ~3 GB, у 2–4 рази повільніша), `medium`, `small`, або будь-який MLX-репозиторій з Hugging Face |
-| `--no-sounds` | без звуків старт/стоп |
+| `--key alt_r` | hotkey to hold: `alt_r`, `ctrl_r`, `cmd_r`, `shift_r`, `f13`… |
+| `--lang uk,en` | allowed languages (default `uk,en` — the model picks one of them per phrase). `--lang uk` = always Ukrainian, `--lang ""` = any language |
+| `--model large` | `large` (default, most accurate, ~3 GB), `turbo` (faster, ~1.6 GB), `medium`, `small`, or any MLX Whisper repo on Hugging Face |
+| `--enter` | press Enter after inserting the text |
+| `--mode type` | type character by character instead of pasting with Cmd+V |
+| `--prompt "..."` | extra vocabulary hints for Whisper |
+| `--dict PATH` | personal dictionary file |
+| `--postroll 0.35` | keep recording this many seconds after the key is released |
+| `--mic-on-demand` | open the mic only while the key is held (no orange indicator, but the first ~0.2 s may be cut) |
+| `--no-sounds` | disable start/stop sounds |
 
-## Для League of Legends
+## How text is inserted
 
-```bash
-python dictate.py --enter
-```
+- **Default:** the text is put on the clipboard, Cmd+V is sent, then the previous clipboard content is restored.
+- **Type mode:** characters are sent as keyboard events (for apps that ignore paste).
+- **Game mode (automatic):** some full-screen games ignore both. For known game clients Wisper types each character as a real key press, slowly, and also leaves the text on the clipboard as a fallback.
 
-Enter (відкрити чат) → тримай правий Option, говори → відпусти → текст вставиться і відправиться.
+## Troubleshooting
 
-Якщо в грі Cmd+V не спрацює — спробуй `--mode type`.
+- **Logs:** `~/Library/Logs/Wisper.log` (menu → Open log).
+- **Hotkey does nothing:** check Accessibility and Input Monitoring for Wisper (or your terminal).
+- **Poor recognition:** recent takes are saved to `~/Library/Application Support/Wisper/recordings/`. Run `python retest.py` to re-transcribe the latest one with different settings (models, prompt, language) and see audio-quality stats.
+- **Bluetooth headsets** (AirPods etc.) switch to a low-quality mic mode — the built-in Mac microphone usually gives better results.

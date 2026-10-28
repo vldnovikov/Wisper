@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Build output
+dist/
+*.app
+*.zip
+
+# Local data / debugging
+recordings/
+*.wav
+*.retest.txt
+*.log
+
+# Editors
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
