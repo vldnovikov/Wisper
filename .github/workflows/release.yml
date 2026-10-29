@@ -1,0 +1,53 @@
+name: Release
+
+# Push a tag like v0.2.0 to build Wisper.app on an Apple Silicon runner and
+# attach Wisper.zip to a GitHub Release. "Run workflow" (manual) builds the zip
+# as a downloadable artifact without creating a release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15 # Apple Silicon (arm64)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Create Python environment
+        run: |
+          uv venv -p 3.12 .venv
+          uv pip install --python .venv/bin/python -r requirements.txt
+
+      - name: Build self-contained app
+        env:
+          WISPER_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.0.0-dev' }}
+        run: ./package_app.sh
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wisper
+          path: dist/Wisper.zip
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/Wisper.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/Wisper.zip \
+              --title "Wisper $GITHUB_REF_NAME" \
+              --notes-file RELEASE_NOTES.md
+          fi

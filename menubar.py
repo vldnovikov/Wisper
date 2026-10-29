@@ -56,6 +56,7 @@ except Exception:
 
 import rumps
 
+import cloud
 import dictate as d
 
 if os.environ.get("WISPER_SELFTEST"):
@@ -76,6 +77,8 @@ DEFAULTS = {
     "mode": "paste",
     "sounds": True,
     "key": "alt_r",
+    "engine": "local",
+    "cleanup": False,
 }
 
 ICONS = {
@@ -151,6 +154,8 @@ class WisperApp(rumps.App):
         args.mode = self.s["mode"]
         args.sounds = self.s["sounds"]
         args.key = self.s["key"]
+        args.engine = self.s["engine"] if self.s["engine"] in cloud.ENGINES else "local"
+        args.cleanup = bool(self.s["cleanup"])
         self.engine = d.App(args)
 
         # --- menu ---------------------------------------------------------- #
@@ -164,6 +169,26 @@ class WisperApp(rumps.App):
             item = rumps.MenuItem(label, callback=self._make_cb(self.set_lang, value))
             item.state = int(value == self.s["lang"])
             self.lang_menu.add(item)
+
+        self.engine_menu = rumps.MenuItem("Розпізнавання")
+        for value, label in cloud.ENGINES.items():
+            item = rumps.MenuItem(label, callback=self._make_cb(self.set_engine, value))
+            item.state = int(value == self.engine.args.engine)
+            self.engine_menu.add(item)
+
+        self.cleanup_item = rumps.MenuItem("Виправляти текст через Claude Haiku",
+                                           callback=self.toggle_cleanup)
+        self.cleanup_item.state = int(self.engine.args.cleanup)
+
+        self.keys_menu = rumps.MenuItem("API-ключі")
+        self.openai_key_item = rumps.MenuItem("OpenAI…", callback=lambda _: self.ask_key("openai"))
+        self.anthropic_key_item = rumps.MenuItem("Anthropic (Claude)…",
+                                                 callback=lambda _: self.ask_key("anthropic"))
+        self.keys_menu.add(self.openai_key_item)
+        self.keys_menu.add(self.anthropic_key_item)
+        self.keys_menu.add(None)
+        self.keys_menu.add(rumps.MenuItem("Видалити всі ключі", callback=self.delete_keys))
+        self._refresh_key_labels()
 
         self.key_menu = rumps.MenuItem("Клавіша")
         for label, value in KEY_OPTIONS:
@@ -187,6 +212,10 @@ class WisperApp(rumps.App):
             self.perm_item,
             None,
             self.last_item,
+            None,
+            self.engine_menu,
+            self.cleanup_item,
+            self.keys_menu,
             None,
             self.lang_menu,
             self.key_menu,
@@ -233,7 +262,7 @@ class WisperApp(rumps.App):
             key = KEY_LABEL.get(self.s["key"], self.s["key"])
             self.status_item.title = {
                 "loading": "Завантаження моделі…",
-                "idle": f"Готово — тримай {key}",
+                "idle": f"Готово — тримай {key} · {self._engine_short()}",
                 "recording": "Запис… (Esc — скасувати)",
                 "busy": "Розпізнаю…",
                 "error": "Помилка — дивись лог",
@@ -284,6 +313,92 @@ class WisperApp(rumps.App):
         self.engine.hotkey = d.resolve_hotkey(value)
         self._last_state = None  # refresh status text
         d.log(f"Hotkey: {value}")
+
+    # --- engines, cleanup, API keys ---------------------------------------- #
+    def _engine_short(self) -> str:
+        e = self.engine.args.engine
+        name = "Whisper локально" if e == "local" else e
+        return name + (" + Claude" if self.engine.args.cleanup else "")
+
+    def _refresh_key_labels(self) -> None:
+        self.openai_key_item.title = f"OpenAI: {cloud.mask(cloud.get_key('openai'))}…"
+        self.anthropic_key_item.title = f"Anthropic (Claude): {cloud.mask(cloud.get_key('anthropic'))}…"
+
+    def ask_key(self, name: str) -> bool:
+        """Secure input dialog; saves the key to the Keychain. True if saved."""
+        label = {"openai": "OpenAI", "anthropic": "Anthropic (Claude)"}[name]
+        where = {"openai": "platform.openai.com → API keys",
+                 "anthropic": "console.anthropic.com → API Keys"}[name]
+        try:
+            from AppKit import NSApplication
+
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+        r = rumps.Window(
+            message=f"Встав API-ключ ({where}).\nВін зберігається в Keychain цього Мака "
+                    f"і нікуди не надсилається, крім {label}.",
+            title=f"{label} API key",
+            default_text="",
+            ok="Зберегти",
+            cancel="Скасувати",
+            dimensions=(380, 24),
+            secure=True,
+        ).run()
+        key = (r.text or "").strip()
+        if not r.clicked or not key:
+            return False
+        if name == "openai" and key.startswith("sk-ant-"):
+            rumps.alert("Wisper", "Схоже, це ключ Anthropic, а не OpenAI. Не збережено.")
+            return False
+        if name == "anthropic" and not key.startswith("sk-ant-"):
+            rumps.alert("Wisper", "Ключі Anthropic починаються з «sk-ant-». Не збережено.")
+            return False
+        try:
+            cloud.set_key(name, key)
+        except Exception as e:
+            rumps.alert("Wisper", f"Не вдалося зберегти ключ: {e}")
+            return False
+        d.log(f"{label} API key saved ({cloud.mask(key)})")
+        self._refresh_key_labels()
+        return True
+
+    def delete_keys(self, _) -> None:
+        cloud.delete_key("openai")
+        cloud.delete_key("anthropic")
+        self._refresh_key_labels()
+        d.log("API keys deleted")
+        if self.engine.args.engine != "local":
+            self._select_engine("local")
+        if self.engine.args.cleanup:
+            self.cleanup_item.state = 0
+            self.engine.args.cleanup = self.s["cleanup"] = False
+            self._save()
+
+    def _select_engine(self, value: str) -> None:
+        for v, item in zip(cloud.ENGINES, self.engine_menu.values()):
+            item.state = int(v == value)
+        self.engine.args.engine = self.s["engine"] = value
+        self._save()
+        self._last_state = None  # refresh status line
+        d.log(f"Engine: {value}")
+
+    def set_engine(self, sender, value: str) -> None:
+        if value != "local" and not cloud.get_key("openai"):
+            if not self.ask_key("openai"):
+                return  # keep the previous engine
+        self._select_engine(value)
+
+    def toggle_cleanup(self, sender) -> None:
+        turning_on = not sender.state
+        if turning_on and not cloud.get_key("anthropic"):
+            if not self.ask_key("anthropic"):
+                return
+        sender.state = int(turning_on)
+        self.engine.args.cleanup = self.s["cleanup"] = bool(turning_on)
+        self._save()
+        self._last_state = None
+        d.log(f"Claude cleanup: {'on' if turning_on else 'off'}")
 
     def toggle_enter(self, sender) -> None:
         sender.state = int(not sender.state)

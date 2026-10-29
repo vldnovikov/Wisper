@@ -26,6 +26,8 @@ import time
 
 import numpy as np
 import sounddevice as sd
+
+import cloud
 from pynput import keyboard
 
 SAMPLE_RATE = 16_000
@@ -311,6 +313,10 @@ class Transcriber:
         self.last_lang_probs: dict[str, float] = {}
         self.last_raw_top: list[tuple[str, float]] = []
         self.vocab: list[str] = []
+
+    @staticmethod
+    def parse_langs(spec: str) -> list[str]:
+        return [l.strip() for l in (spec or "").split(",") if l.strip()]
 
     def _detect_language(self, audio: np.ndarray) -> str:
         mx = self._mx
@@ -643,32 +649,75 @@ class App:
             return
 
         self.dictionary.refresh()
+        engine = getattr(self.args, "engine", "local") or "local"
+        text, lang, probs_s, used = None, None, "", "local"
+
+        # 1) Speech -> text: cloud engine (if selected), local Whisper otherwise
+        #    or as a fallback when the cloud call fails.
         t0 = time.time()
-        with self._model_lock:
-            self.transcriber.vocab = self.dictionary.vocab
-            text, lang = self.transcriber.transcribe(audio)
+        if engine != "local":
+            key = cloud.get_key("openai")
+            if not key:
+                log(f"⚠️  {engine}: no OpenAI API key — using local Whisper")
+            else:
+                langs = Transcriber.parse_langs(self.args.lang)
+                try:
+                    text = cloud.openai_transcribe(
+                        audio, engine, key,
+                        language=langs[0] if len(langs) == 1 else None,
+                        prompt=(", ".join(self.dictionary.vocab) or None),
+                    )
+                    lang, used = "cloud", engine
+                except Exception as e:
+                    log(f"⚠️  {engine} failed ({e}) — using local Whisper")
+        if text is None:
+            if self.transcriber is None:
+                log("Local model is not loaded yet")
+                return
+            with self._model_lock:
+                self.transcriber.vocab = self.dictionary.vocab
+                text, lang = self.transcriber.transcribe(audio)
+            probs = self.transcriber.last_lang_probs
+            if len(probs) > 1:
+                raw = ", ".join(f"{k}={v:.2f}" for k, v in self.transcriber.last_raw_top)
+                probs_s = (
+                    " (" + ", ".join(f"{k}={v:.2f}" for k, v in probs.items())
+                    + f" | raw: {raw})"
+                )
         dt = time.time() - t0
 
         if is_hallucination(text):
             log(f"Dropped likely hallucination: {text!r}")
             return
+        log(f"{seconds:.1f}s audio -> {dt:.2f}s [{used}] | [{lang}{probs_s}] {text}")
 
-        probs = self.transcriber.last_lang_probs
-        probs_s = ""
-        if len(probs) > 1:
-            raw = ", ".join(f"{k}={v:.2f}" for k, v in self.transcriber.last_raw_top)
-            probs_s = (
-                " (" + ", ".join(f"{k}={v:.2f}" for k, v in probs.items())
-                + f" | raw: {raw})"
-            )
+        # 2) Optional cleanup with Claude Haiku (text only).
+        if getattr(self.args, "cleanup", False):
+            key = cloud.get_key("anthropic")
+            if not key:
+                log("⚠️  Cleanup: no Anthropic API key — skipped")
+            else:
+                t1 = time.time()
+                try:
+                    cleaned = cloud.claude_cleanup(text, key, self.dictionary.vocab)
+                    if cleaned != text:
+                        log(f"Claude cleanup ({time.time() - t1:.2f}s): {text!r} -> {cleaned!r}")
+                        text = cleaned
+                    else:
+                        log(f"Claude cleanup ({time.time() - t1:.2f}s): no changes")
+                except Exception as e:
+                    log(f"⚠️  Claude cleanup failed ({e}) — using original text")
+
+        # 3) Personal dictionary replacements.
         fixed = self.dictionary.apply(text)
         if fixed != text:
             log(f"Dictionary fixed: {text!r} -> {fixed!r}")
             text = fixed
-        log(f"{seconds:.1f}s audio -> {dt:.2f}s | [{lang}{probs_s}] {text}")
+
         peak = float(np.max(np.abs(audio)))
         save_recording(audio, text,
-                       f"model={self.args.model} lang={lang}{probs_s} rms={rms:.4f} peak={peak:.3f}")
+                       f"engine={used} model={self.args.model} lang={lang}{probs_s} "
+                       f"cleanup={getattr(self.args, 'cleanup', False)} rms={rms:.4f} peak={peak:.3f}")
         self.last_text = text
         self.inserter.insert(text)
 
@@ -747,6 +796,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mic-on-demand", dest="mic_always_on", action="store_false",
                    help="open the mic only while the key is held (no orange indicator, "
                         "but the first ~0.2 s may be cut)")
+    p.add_argument("--engine", default="local", choices=list(cloud.ENGINES),
+                   help="speech-to-text engine: local Whisper or an OpenAI model "
+                        "(needs OPENAI_API_KEY or a key saved in Wisper)")
+    p.add_argument("--cleanup", action="store_true",
+                   help="fix spelling/punctuation with Claude Haiku "
+                        "(needs ANTHROPIC_API_KEY or a key saved in Wisper)")
     p.add_argument("--no-sounds", dest="sounds", action="store_false",
                    help="disable start/stop sounds")
     return p

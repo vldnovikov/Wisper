@@ -11,6 +11,8 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PY="$DIR/.venv/bin/python"
+VERSION="${WISPER_VERSION:-0.1}"
+VERSION="${VERSION#v}"   # tag "v0.2.0" -> "0.2.0"
 DIST="$DIR/dist"
 APP="$DIST/Wisper.app"
 C="$APP/Contents"
@@ -47,7 +49,7 @@ rsync -a \
   "$VENV_SITE/" "$RES/site-packages/"
 
 echo "→ Copying app code"
-cp "$DIR/dictate.py" "$DIR/menubar.py" "$RES/app/"
+cp "$DIR/dictate.py" "$DIR/menubar.py" "$DIR/cloud.py" "$RES/app/"
 
 cat > "$C/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -57,8 +59,8 @@ cat > "$C/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Wisper</string>
   <key>CFBundleDisplayName</key><string>Wisper</string>
   <key>CFBundleIdentifier</key><string>com.vnovikov.wisper</string>
-  <key>CFBundleVersion</key><string>0.1</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>Wisper</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -180,7 +182,7 @@ PYICON
 
 echo "→ Self-test (bundled Python + packages load)"
 if ! WISPER_SELFTEST=1 "$C/MacOS/Wisper"; then
-  echo "❌ Self-test failed — see ~/Library/Logs/Wisper.log"; exit 1
+  echo "❌ Self-test failed:"; tail -40 ~/Library/Logs/Wisper.log 2>/dev/null; exit 1
 fi
 find "$APP" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 

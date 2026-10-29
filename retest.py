@@ -89,6 +89,23 @@ def main() -> None:
         lines.append(line)
     d.LANG_PROMPTS.update(original_prompts)
 
+    # Cloud engines (only if an OpenAI key is available). Costs ~$0.003-0.006/min.
+    import cloud
+
+    key = cloud.get_key("openai")
+    if key:
+        for model in ("gpt-4o-transcribe", "gpt-transcribe", "gpt-4o-mini-transcribe"):
+            t0 = time.time()
+            try:
+                text = cloud.openai_transcribe(audio, model, key)
+            except Exception as e:
+                text = f"ERROR: {e}"
+            line = f"[cloud | {model:28}] {time.time() - t0:4.2f}s {text}"
+            print(line, flush=True)
+            lines.append(line)
+    else:
+        lines.append("(cloud engines skipped: no OpenAI key)")
+
     out = path[:-4] + ".retest.txt"
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")

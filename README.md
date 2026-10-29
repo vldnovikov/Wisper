@@ -4,7 +4,12 @@ Local push-to-talk dictation for macOS (Apple Silicon). Hold a key, speak, relea
 
 - Works in any app: browsers, chats, editors, Spotlight, etc.
 - Ukrainian + English out of the box (language is picked per phrase).
-- Menu-bar app with a status icon; no audio ever leaves your Mac.
+- Menu-bar app with a status icon.
+- Local by default (no audio leaves your Mac); optional OpenAI cloud recognition and Claude text cleanup.
+
+## Download
+
+Get the ready-to-use app from **[Releases](https://github.com/vldnovikov/whisper/releases/latest)** — download `Wisper.zip`, no Python or anything else needed. Install steps are in the release notes (macOS will block the first launch because the app isn't notarized: System Settings → Privacy & Security → **Open Anyway**).
 
 ## Requirements
 
@@ -69,6 +74,25 @@ For the person installing it:
 3. Wait for the menu-bar icon to turn from ⏳ to 🎙 (model download).
 4. Grant Microphone, Accessibility and Input Monitoring.
 
+## Recognition engines and Claude cleanup
+
+Menu → **Розпізнавання** (Recognition) lets you pick how speech is turned into text:
+
+| Engine | Where it runs | Cost | Notes |
+|---|---|---|---|
+| Local — Whisper large | on your Mac | free | default, works offline, audio never leaves the Mac |
+| OpenAI `gpt-4o-transcribe` | OpenAI cloud | ~$0.006 / min | most accurate, best with mixed Ukrainian/English |
+| OpenAI `gpt-transcribe` | OpenAI cloud | ~$0.0045 / min | |
+| OpenAI `gpt-4o-mini-transcribe` | OpenAI cloud | ~$0.003 / min | cheapest cloud option |
+
+Menu → **Виправляти текст через Claude Haiku** (Fix text with Claude Haiku) sends the recognized *text* (never audio) to Claude Haiku, which fixes spelling, punctuation and Russian-style spellings without changing the meaning. Works with any engine; adds ~0.5–1 s.
+
+**API keys:** menu → **API-ключі** (API keys). Paste your OpenAI key (platform.openai.com) and/or Anthropic key (console.anthropic.com). Keys are stored in the macOS Keychain (service "Wisper"), never in files. Selecting a cloud engine or turning on cleanup without a key asks for it automatically.
+
+If a cloud request fails (no internet, invalid key), Wisper falls back to local Whisper / the uncleaned text, so dictation keeps working. Details are in the log.
+
+Rough cost for ~1,000 dictated words a day (~8–10 min of audio): `gpt-4o-transcribe` ≈ $1.50–1.80 / month, `gpt-4o-mini-transcribe` ≈ $0.75–0.90 / month, Claude cleanup ≈ $0.10 / month.
+
 ## Personal dictionary
 
 Menu → **Dictionary…** opens `~/Library/Application Support/Wisper/dictionary.txt`. Changes apply immediately.
@@ -81,6 +105,17 @@ Kubernetes
 # Replacements — "what was recognized => what it should be" (whole words, case-insensitive)
 Віспар => Wispr
 ```
+
+## Publishing a release
+
+GitHub Actions builds the self-contained app on an Apple Silicon runner (`.github/workflows/release.yml`):
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+A few minutes later `Wisper.zip` is attached to the `v0.2.0` release (notes come from `RELEASE_NOTES.md`). Actions → Release → **Run workflow** builds the zip as an artifact without publishing a release.
 
 ## Running from the terminal
 
@@ -103,6 +138,8 @@ When running this way, grant Microphone / Accessibility / Input Monitoring to yo
 | `--dict PATH` | personal dictionary file |
 | `--postroll 0.35` | keep recording this many seconds after the key is released |
 | `--mic-on-demand` | open the mic only while the key is held (no orange indicator, but the first ~0.2 s may be cut) |
+| `--engine NAME` | `local` (default), `gpt-4o-transcribe`, `gpt-transcribe`, `gpt-4o-mini-transcribe` — cloud engines need `OPENAI_API_KEY` or a key saved in Wisper |
+| `--cleanup` | fix the text with Claude Haiku — needs `ANTHROPIC_API_KEY` or a key saved in Wisper |
 | `--no-sounds` | disable start/stop sounds |
 
 ## How text is inserted
