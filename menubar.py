@@ -79,6 +79,7 @@ DEFAULTS = {
     "key": "alt_r",
     "engine": "local",
     "cleanup": False,
+    "mic_always_on": False,
 }
 
 ICONS = {
@@ -156,6 +157,7 @@ class WisperApp(rumps.App):
         args.key = self.s["key"]
         args.engine = self.s["engine"] if self.s["engine"] in cloud.ENGINES else "local"
         args.cleanup = bool(self.s["cleanup"])
+        args.mic_always_on = bool(self.s["mic_always_on"])
         self.engine = d.App(args)
 
         # --- menu ---------------------------------------------------------- #
@@ -201,6 +203,9 @@ class WisperApp(rumps.App):
         self.type_item = rumps.MenuItem("Type Characters (Instead of Cmd+V)",
                                         callback=self.toggle_type)
         self.type_item.state = int(self.s["mode"] == "type")
+        self.mic_item = rumps.MenuItem("Keep Microphone Open (Faster Start)",
+                                       callback=self.toggle_mic_always_on)
+        self.mic_item.state = int(self.s["mic_always_on"])
         self.sounds_item = rumps.MenuItem("Sounds", callback=self.toggle_sounds)
         self.sounds_item.state = int(self.s["sounds"])
 
@@ -221,6 +226,7 @@ class WisperApp(rumps.App):
             self.key_menu,
             self.enter_item,
             self.type_item,
+            self.mic_item,
             self.sounds_item,
             None,
             self.login_item,
@@ -411,6 +417,13 @@ class WisperApp(rumps.App):
         self.s["mode"] = "type" if sender.state else "paste"
         self.engine.inserter.mode = self.s["mode"]
         self._save()
+
+    def toggle_mic_always_on(self, sender) -> None:
+        sender.state = int(not sender.state)
+        self.s["mic_always_on"] = bool(sender.state)
+        self.engine.recorder.set_always_on(self.s["mic_always_on"])
+        self._save()
+        d.log(f"Mic always on: {self.s['mic_always_on']}")
 
     def toggle_sounds(self, sender) -> None:
         sender.state = int(not sender.state)

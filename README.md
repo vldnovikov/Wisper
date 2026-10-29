@@ -48,7 +48,9 @@ The menu-bar icon shows the current state: ⏳ loading model → 🎙 ready → 
 
 **Usage:** hold **Right Option**, speak, release. Press **Esc** while holding to cancel.
 
-**Menu:** permissions status, copy last text, language, hotkey, press Enter after inserting, type character by character, sounds, launch at login, personal dictionary, log.
+**Menu:** permissions status, copy last text, recognition engine, Claude cleanup, API keys, language, hotkey, press Enter after inserting, type character by character, keep microphone open, sounds, launch at login, personal dictionary, log.
+
+By default the microphone is only open while you hold the hotkey, so the orange mic indicator appears only while recording. If the first syllable sometimes gets cut, turn on **Keep Microphone Open (Faster Start)** — the mic then stays open with a 0.3 s buffer, and macOS shows the indicator all the time.
 
 `Wisper.app` built this way is a thin launcher: a small native binary (compiled with `clang`) that embeds Python from this folder's `.venv` and runs `menubar.py`. After editing the code just restart Wisper — no rebuild needed. Re-run `build_app.sh` only if you move the project folder.
 
@@ -143,7 +145,7 @@ When running this way, grant Microphone / Accessibility / Input Monitoring to yo
 | `--prompt "..."` | extra vocabulary hints for Whisper |
 | `--dict PATH` | personal dictionary file |
 | `--postroll 0.35` | keep recording this many seconds after the key is released |
-| `--mic-on-demand` | open the mic only while the key is held (no orange indicator, but the first ~0.2 s may be cut) |
+| `--mic-always-on` | keep the mic open with a 0.3 s pre-roll so the first syllable is never cut (the orange mic indicator stays on) |
 | `--engine NAME` | `local` (default), `gpt-4o-transcribe`, `gpt-transcribe`, `gpt-4o-mini-transcribe` — cloud engines need `OPENAI_API_KEY` or a key saved in Wisper |
 | `--cleanup` | fix the text with Claude Haiku — needs `ANTHROPIC_API_KEY` or a key saved in Wisper |
 | `--no-sounds` | disable start/stop sounds |

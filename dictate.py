@@ -218,7 +218,7 @@ class Recorder:
 
     BLOCK = 1024
 
-    def __init__(self, always_on: bool = True, preroll: float = 0.3) -> None:
+    def __init__(self, always_on: bool = False, preroll: float = 0.3) -> None:
         self.always_on = always_on
         self._frames: list[np.ndarray] = []
         self._ring: collections.deque[np.ndarray] = collections.deque(
@@ -270,6 +270,20 @@ class Recorder:
             self._frames = list(self._ring) if self.always_on else []
             self._ring.clear()
             self._capturing = True
+
+    def set_always_on(self, value: bool) -> None:
+        """Switch at runtime between a permanently open mic (pre-roll, orange
+        indicator always on) and opening it only while recording."""
+        self.always_on = value
+        if value and self._stream is None:
+            try:
+                self._open()
+            except Exception as e:
+                log(f"Mic open failed: {e}")
+        elif not value and not self._capturing:
+            self._close()
+            with self._lock:
+                self._ring.clear()
 
     def stop(self) -> np.ndarray:
         with self._lock:
@@ -548,7 +562,7 @@ class App:
     def __init__(self, args: argparse.Namespace, on_state=None) -> None:
         self.args = args
         self.hotkey = resolve_hotkey(args.key)
-        self.recorder = Recorder(always_on=getattr(args, "mic_always_on", True))
+        self.recorder = Recorder(always_on=getattr(args, "mic_always_on", False))
         self.inserter = Inserter(args.mode, args.enter)
         self.jobs: queue.Queue[np.ndarray] = queue.Queue()
         self.recording = False
@@ -792,9 +806,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"personal dictionary file (default: {DICTIONARY_PATH})")
     p.add_argument("--postroll", type=float, default=0.35,
                    help="seconds to keep recording after the key is released (default 0.35)")
-    p.add_argument("--mic-on-demand", dest="mic_always_on", action="store_false",
-                   help="open the mic only while the key is held (no orange indicator, "
-                        "but the first ~0.2 s may be cut)")
+    p.add_argument("--mic-always-on", dest="mic_always_on", action="store_true",
+                   help="keep the mic open with a 0.3 s pre-roll so the first syllable is "
+                        "never cut (macOS shows the orange mic indicator all the time)")
     p.add_argument("--engine", default="local", choices=list(cloud.ENGINES),
                    help="speech-to-text engine: local Whisper or an OpenAI model "
                         "(needs OPENAI_API_KEY or a key saved in Wisper)")
