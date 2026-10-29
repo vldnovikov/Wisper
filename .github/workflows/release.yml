@@ -1,15 +1,23 @@
 name: Release
 
-# Push a tag like v0.2.0 to build Wisper.app on an Apple Silicon runner and
-# attach Wisper.zip to a GitHub Release. "Run workflow" (manual) builds the zip
-# as a downloadable artifact without creating a release.
+# Every push to main builds a self-contained Wisper.app on an Apple Silicon
+# runner and publishes it as a new GitHub Release (vX.Y.<run number>).
+# Version base comes from the VERSION file. Docs-only pushes are skipped.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# A newer push cancels a build that is still running.
+concurrency:
+  group: release
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -17,6 +25,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute version
+        run: |
+          BASE="$(tr -d '[:space:]' < VERSION)"
+          echo "VERSION=${BASE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Install uv
         run: |
@@ -30,24 +43,28 @@ jobs:
 
       - name: Build self-contained app
         env:
-          WISPER_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.0.0-dev' }}
+          WISPER_VERSION: ${{ env.VERSION }}
         run: ./package_app.sh
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Wisper
+          name: Wisper-${{ env.VERSION }}
           path: dist/Wisper.zip
 
       - name: Publish GitHub Release
-        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/Wisper.zip --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/Wisper.zip \
-              --title "Wisper $GITHUB_REF_NAME" \
-              --notes-file RELEASE_NOTES.md
-          fi
+          TAG="v${VERSION}"
+          NOTES="$(mktemp)"
+          {
+            echo "Built from \`${GITHUB_SHA::7}\`: $(git log -1 --pretty=%s)"
+            echo
+            cat RELEASE_NOTES.md
+          } > "$NOTES"
+          gh release create "$TAG" dist/Wisper.zip \
+            --target "$GITHUB_SHA" \
+            --title "Wisper $TAG" \
+            --notes-file "$NOTES" \
+            --latest

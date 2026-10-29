@@ -38,6 +38,7 @@ rsync -a \
   --exclude "lib/python$PYVER/tkinter" --exclude "lib/python$PYVER/turtledemo" \
   --exclude "lib/python$PYVER/ensurepip" --exclude "lib/python$PYVER/site-packages" \
   --exclude "lib/tcl*" --exclude "lib/tk*" --exclude "lib/itcl*" --exclude "lib/thread*" \
+  --exclude "lib/libtcl*" --exclude "lib/libtk*" --exclude "lib/python$PYVER/lib-dynload/_tkinter*" \
   --exclude "share" --exclude "__pycache__" \
   "$PYHOME/" "$RES/python/"
 
@@ -50,6 +51,38 @@ rsync -a \
 
 echo "→ Copying app code"
 cp "$DIR/dictate.py" "$DIR/menubar.py" "$DIR/cloud.py" "$RES/app/"
+
+echo "→ Making the bundle self-contained (symlinks, permissions)"
+# Some files in the Python runtime are read-only (codesign then can't sign them)
+# and some symlinks point to absolute paths that exist only on the build
+# machine (e.g. etc/openssl/cert.pem). Such a dangling link breaks the app's
+# signature on every other Mac. Replace links that leave the bundle with real
+# copies; drop links whose target doesn't exist.
+chmod -R u+w "$APP"
+"$PY" - "$APP" <<'PYFIX'
+import os, shutil, sys
+root = os.path.realpath(sys.argv[1])
+fixed = dropped = 0
+for dirpath, dirnames, filenames in os.walk(root):
+    for name in dirnames + filenames:
+        p = os.path.join(dirpath, name)
+        if not os.path.islink(p):
+            continue
+        target = os.path.realpath(p)
+        inside = target == root or target.startswith(root + os.sep)
+        if inside and os.path.exists(target):
+            continue
+        os.unlink(p)
+        if os.path.isdir(target):
+            shutil.copytree(target, p, symlinks=False)
+            fixed += 1
+        elif os.path.isfile(target):
+            shutil.copy2(target, p)
+            fixed += 1
+        else:
+            dropped += 1
+print(f"   symlinks: {fixed} replaced with copies, {dropped} dangling removed")
+PYFIX
 
 cat > "$C/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -189,17 +222,54 @@ if ! WISPER_SELFTEST=1 "$C/MacOS/Wisper"; then
 fi
 find "$APP" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
+echo "→ Removing helper scripts not needed at runtime"
+# pip/2to3/pydoc/idle wrappers are plain scripts. Signing them stores the
+# signature in extended attributes, which zip/download/unzip can lose — and a
+# lost signature breaks the whole bundle on the target Mac. Keep only the
+# python binaries (needed when Wisper re-runs its interpreter).
+find "$RES/python/bin" \( -type f -o -type l \) ! -name "python*" -delete
+find "$RES/python/bin" -name "python*-config" -delete
+
 echo "→ Signing (ad-hoc)"
-# Every Mach-O file needs a valid signature on Apple Silicon; sign inner ones first.
-find "$RES" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
-  | xargs -0 -n 50 codesign --force --sign - 2>/dev/null || true
-find "$RES/python/bin" -type f -perm +111 -print0 \
-  | xargs -0 -n 50 codesign --force --sign - 2>/dev/null || true
+xattr -cr "$APP"   # strip stray attributes (provenance, quarantine, Finder info)
+# Sign every Mach-O file inside (libraries, extensions, the bundled python),
+# deepest first, then the app itself. Never sign non-Mach-O files.
+MACHO_COUNT=0
+while IFS= read -r -d '' f; do
+  if file -b "$f" | grep -q "Mach-O"; then
+    codesign --force --sign - "$f"
+    MACHO_COUNT=$((MACHO_COUNT + 1))
+  fi
+done < <(find "$RES" -type f \( -name "*.so" -o -name "*.dylib" -o -perm +111 \) -print0)
+echo "   signed $MACHO_COUNT inner binaries"
 codesign --force --sign - --identifier com.vnovikov.wisper "$APP"
-codesign --verify --deep "$APP" && echo "   signature ok"
+codesign --verify --deep --strict "$APP" && echo "   signature ok"
 
 echo "→ Zipping"
-ditto -c -k --keepParent "$APP" "$DIST/Wisper.zip"
+# Apple's recommended way to zip an app bundle (keeps symlinks, permissions).
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/Wisper.zip"
+
+echo "→ Verifying the zip (unpack + check signature, like the user's Mac will)"
+CHECK="$(mktemp -d)"
+ditto -x -k "$DIST/Wisper.zip" "$CHECK"
+if ! codesign --verify --deep --strict -vv "$CHECK/Wisper.app"; then
+  echo "❌ The app's signature breaks after zip/unzip:"
+  codesign --verify --deep --strict -vvvv "$CHECK/Wisper.app" 2>&1 | tail -20
+  exit 1
+fi
+if ! WISPER_SELFTEST=1 "$CHECK/Wisper.app/Contents/MacOS/Wisper"; then
+  echo "❌ Unzipped app failed the self-test:"; tail -40 ~/Library/Logs/Wisper.log 2>/dev/null; exit 1
+fi
+BAD_LINKS="$(find "$CHECK/Wisper.app" -type l | while read -r l; do
+  t="$(cd "$(dirname "$l")" && readlink "$l")"
+  case "$t" in /*) echo "$l -> $t";; esac
+  [ -e "$l" ] || echo "$l -> $t (dangling)"
+done)"
+if [ -n "$BAD_LINKS" ]; then
+  echo "❌ Symlinks that won't exist on other Macs:"; echo "$BAD_LINKS" | head -20; exit 1
+fi
+rm -rf "$CHECK"
+echo "   unzipped copy: signature ok, self-test ok, no external symlinks"
 
 echo
 echo "✅ $APP  ($(du -sh "$APP" | cut -f1))"
