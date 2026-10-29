@@ -103,9 +103,11 @@ int main(int argc, char **argv) {
     snprintf(script, sizeof script, "%s/menubar.py", appdir);
     snprintf(python, sizeof python, "%s/bin/python3", pyhome);
 
-    /* Called with arguments = a library re-running sys.executable
-       (multiprocessing, tqdm locks): hand over to the bundled python. */
-    if (argc > 1) {
+    /* A child process of Wisper (multiprocessing, tqdm locks…) re-runs
+       sys.executable: hand it to the real Python. Recognised by the
+       WISPER_LAUNCHED marker we set below. Arguments macOS itself passes
+       on launch (e.g. -psn_0_… after a Gatekeeper prompt) are ignored. */
+    if (getenv("WISPER_LAUNCHED")) {
         argv[0] = python;
         execv(python, argv);
         perror("execv");
@@ -125,6 +127,7 @@ int main(int argc, char **argv) {
     setenv("WISPER_SITE", site, 1);
     setenv("WISPER_APP", app, 1);
     setenv("WISPER_PYTHON", python, 1);
+    setenv("WISPER_LAUNCHED", "1", 1);
     setenv("PYTHONUNBUFFERED", "1", 1);
     setenv("PYTHONNOUSERSITE", "1", 1);
     setenv("PYTHONDONTWRITEBYTECODE", "1", 1);  /* never write into the signed bundle */

@@ -71,10 +71,11 @@ cat > "$TMPC/launcher.c" <<'C'
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    /* Libraries (multiprocessing, tqdm locks…) re-run sys.executable with
-       arguments. Hand those calls to the real Python instead of starting
-       another Wisper. */
-    if (argc > 1) {
+    /* A child process of Wisper (multiprocessing, tqdm locks…) re-runs
+       sys.executable: hand it to the real Python. Recognised by the
+       WISPER_LAUNCHED marker we set below. Arguments macOS itself passes
+       on launch (e.g. -psn_0_… after a Gatekeeper prompt) are ignored. */
+    if (getenv("WISPER_LAUNCHED")) {
         argv[0] = WISPER_PY;
         execv(WISPER_PY, argv);
         perror("execv");
@@ -93,6 +94,7 @@ int main(int argc, char **argv) {
     setenv("WISPER_SITE", WISPER_SITE_DIR, 1);
     setenv("WISPER_APP", WISPER_APP_PATH, 1);
     setenv("WISPER_PYTHON", WISPER_PY, 1);
+    setenv("WISPER_LAUNCHED", "1", 1);
     setenv("PYTHONUNBUFFERED", "1", 1);
     setenv("PYTHONNOUSERSITE", "1", 1);
     unsetenv("PYTHONPATH");

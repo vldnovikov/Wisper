@@ -108,14 +108,12 @@ Kubernetes
 
 ## Publishing a release
 
-GitHub Actions builds the self-contained app on an Apple Silicon runner (`.github/workflows/release.yml`):
+Every push to `main` triggers GitHub Actions (`.github/workflows/release.yml`): it builds the self-contained app on an Apple Silicon runner and publishes a new release `v<VERSION>.<build number>` (e.g. `v0.2.7`) with `Wisper.zip` attached and marked as latest.
 
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-A few minutes later `Wisper.zip` is attached to the `v0.2.0` release (notes come from `RELEASE_NOTES.md`). Actions → Release → **Run workflow** builds the zip as an artifact without publishing a release.
+- Bump the base version by editing the `VERSION` file (e.g. `0.3`).
+- Pushes that change only `*.md` files don't trigger a build.
+- A newer push cancels a build that is still running.
+- Actions → Release → **Run workflow** starts a build manually.
 
 ## Running from the terminal
 
