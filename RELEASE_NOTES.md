@@ -2,15 +2,21 @@
 
 **Requirements:** Mac with Apple Silicon (M1 or newer), macOS 13 or later. Nothing else — Python and all libraries are inside the app.
 
-1. Download **Wisper.zip** below and double-click it to unzip.
-2. Drag **Wisper.app** into your **Applications** folder.
-3. Open Wisper. macOS will say **"Wisper" Not Opened** (or "can't be opened") — this is expected, the app isn't notarized by Apple. Click **Done**, then:
-   - open **System Settings → Privacy & Security**, scroll down to *"Wisper" was blocked…* and click **Open Anyway**, or
-   - run in Terminal: `xattr -dr com.apple.quarantine /Applications/Wisper.app` and open Wisper again.
-4. Wait until the menu-bar icon changes from ⏳ to 🎙 — the speech model (~3 GB) is downloaded once on first launch.
-5. Grant permissions in **System Settings → Privacy & Security**:
-   - **Microphone** — asked automatically on first use
-   - **Accessibility** and **Input Monitoring** — enable **Wisper**
+**Recommended — one command in Terminal** (installs or updates, no Gatekeeper warning):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vldnovikov/whisper/main/install.sh | bash
+```
+
+**Or manually:**
+
+1. Download **Wisper.zip** below, double-click to unzip, and drag **Wisper.app** into **Applications**.
+2. Open Wisper. macOS will say **"Wisper" Not Opened** — expected, the app isn't notarized by Apple. Click **Done**, then go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+**Then:**
+
+- Wait until the menu-bar icon changes from ⏳ to 🎙 — the speech model (~3 GB) is downloaded once on first launch.
+- Grant permissions in **System Settings → Privacy & Security**: **Microphone** (asked automatically), **Accessibility** and **Input Monitoring** (enable **Wisper**). After an update you may need to re-enable Wisper there.
 
 ## Use
 

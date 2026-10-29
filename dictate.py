@@ -97,23 +97,22 @@ def save_recording(audio: np.ndarray, text: str, meta: str) -> str | None:
 DICTIONARY_PATH = os.path.expanduser("~/Library/Application Support/Wisper/dictionary.txt")
 
 DICTIONARY_TEMPLATE = """\
-# Особистий словник Wisper. Зміни підхоплюються одразу, перезапуск не потрібен.
+# Wisper personal dictionary. Changes apply immediately, no restart needed.
 #
-# 1) Слова-підказки — по одному на рядок. Whisper бачить їх перед розпізнаванням
-#    і частіше пише правильно (назви, імена, терміни, сленг).
-# 2) Заміни — "що розпізналось => як має бути". Застосовуються до готового тексту,
-#    без урахування регістру, лише цілими словами.
+# 1) Hint words — one per line. Whisper sees them before transcribing and is
+#    more likely to spell them right (names, product names, terms, slang).
+# 2) Replacements — "what was recognized => what it should be". Applied to the
+#    final text, case-insensitive, whole words only.
 #
-# Рядки з # — коментарі.
+# Lines starting with # are comments.
 
 Wispr
 Whisper
 Mac
-League of Legends
 
-Віспар => Wispr
-Віспара => Wispr
-Віспер => Wispr
+# Examples of replacements:
+# whisper flow => Wispr Flow
+# Віспар => Wispr
 """
 
 
@@ -783,7 +782,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="allowed languages, comma-separated. One = fixed language; "
                         "several = auto-pick among them; '' = any language. Default: uk,en")
     p.add_argument("--prompt", default=None,
-                   help="initial prompt with vocabulary hints, e.g. 'ганк, мід, джангл, Xerath'")
+                   help="initial prompt with vocabulary hints, e.g. 'Kubernetes, Wispr, Jira'")
     p.add_argument("--mode", choices=["paste", "type"], default="paste",
                    help="paste via clipboard (fast) or type character by character")
     p.add_argument("--enter", action="store_true", help="press Enter after inserting")

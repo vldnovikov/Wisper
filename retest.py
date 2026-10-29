@@ -40,7 +40,7 @@ def audio_stats(a: np.ndarray) -> str:
     total = spec[freqs > 80].sum() + 1e-12
     hi = spec[freqs > 3800].sum() / total * 100
     # Bluetooth headset mics (HFP) are band-limited to ~4 kHz (or 8 kHz)
-    band = "⚠️ схоже на вузькосмуговий мікрофон (Bluetooth?)" if hi < 0.5 else "ok"
+    band = "⚠️ looks like a narrow-band mic (Bluetooth?)" if hi < 0.5 else "ok"
     return (f"duration={dur:.2f}s rms={rms:.4f} peak={peak:.3f} clipped={clip:.2f}% "
             f"energy>3.8kHz={hi:.2f}% ({band})")
 
@@ -52,8 +52,8 @@ def main() -> None:
         rec = d.RECORDINGS_DIR
         wavs = sorted(f for f in os.listdir(rec) if f.endswith(".wav")) if os.path.isdir(rec) else []
         if not wavs:
-            sys.exit("Записів ще немає. Перезапусти Wisper (Вийти → open /Applications/Wisper.app), "
-                     "надиктуй фразу і запусти retest.py знову.")
+            sys.exit("No recordings yet. Restart Wisper (Quit → open /Applications/Wisper.app), "
+                     "dictate a phrase and run retest.py again.")
         path = os.path.join(rec, wavs[-1])
 
     audio = load_wav(path)
@@ -65,11 +65,11 @@ def main() -> None:
 
     uk_prompt = d.LANG_PROMPTS["uk"]
     variants = [
-        ("large", ["uk"], None, "uk, без підказки"),
-        ("large", ["uk"], uk_prompt, "uk, коротка підказка"),
-        ("large", [], None, "автодетект, без підказки"),
-        ("large", ["uk", "en"], None, "uk+en вибір, без підказки"),
-        ("turbo", ["uk"], None, "turbo, uk, без підказки"),
+        ("large", ["uk"], None, "uk, no prompt"),
+        ("large", ["uk"], uk_prompt, "uk, short prompt"),
+        ("large", [], None, "auto-detect, no prompt"),
+        ("large", ["uk", "en"], None, "uk/en choice, no prompt"),
+        ("turbo", ["uk"], None, "turbo, uk, no prompt"),
     ]
 
     import mlx_whisper  # noqa: F401

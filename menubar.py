@@ -90,19 +90,19 @@ ICONS = {
 }
 
 LANG_OPTIONS = [
-    ("Українська + English", "uk,en"),
-    ("Тільки українська", "uk"),
+    ("Ukrainian + English", "uk,en"),
+    ("Ukrainian only", "uk"),
     ("Only English", "en"),
-    ("Будь-яка мова", ""),
+    ("Any language (auto-detect)", ""),
 ]
 MODEL_OPTIONS = [
-    ("Turbo — швидка", "turbo"),
-    ("Large — точніша, повільніша", "large"),
+    ("Turbo — fast", "turbo"),
+    ("Large — more accurate, slower", "large"),
 ]
 KEY_OPTIONS = [
-    ("Правий Option ⌥", "alt_r"),
-    ("Правий Control ⌃", "ctrl_r"),
-    ("Правий Command ⌘", "cmd_r"),
+    ("Right Option ⌥", "alt_r"),
+    ("Right Control ⌃", "ctrl_r"),
+    ("Right Command ⌘", "cmd_r"),
     ("F13", "f13"),
 ]
 KEY_LABEL = {v: k for k, v in KEY_OPTIONS}
@@ -159,52 +159,52 @@ class WisperApp(rumps.App):
         self.engine = d.App(args)
 
         # --- menu ---------------------------------------------------------- #
-        self.status_item = rumps.MenuItem("Завантаження моделі…")
-        self.perm_item = rumps.MenuItem("⚠️ Немає дозволу Accessibility — натисни",
+        self.status_item = rumps.MenuItem("Loading model…")
+        self.perm_item = rumps.MenuItem("⚠️ Accessibility permission missing — click to fix",
                                         callback=self.fix_accessibility)
-        self.last_item = rumps.MenuItem("Скопіювати останній текст", callback=self.copy_last)
+        self.last_item = rumps.MenuItem("Copy Last Text", callback=self.copy_last)
 
-        self.lang_menu = rumps.MenuItem("Мова")
+        self.lang_menu = rumps.MenuItem("Language")
         for label, value in LANG_OPTIONS:
             item = rumps.MenuItem(label, callback=self._make_cb(self.set_lang, value))
             item.state = int(value == self.s["lang"])
             self.lang_menu.add(item)
 
-        self.engine_menu = rumps.MenuItem("Розпізнавання")
+        self.engine_menu = rumps.MenuItem("Recognition")
         for value, label in cloud.ENGINES.items():
             item = rumps.MenuItem(label, callback=self._make_cb(self.set_engine, value))
             item.state = int(value == self.engine.args.engine)
             self.engine_menu.add(item)
 
-        self.cleanup_item = rumps.MenuItem("Виправляти текст через Claude Haiku",
+        self.cleanup_item = rumps.MenuItem("Fix Text with Claude Haiku",
                                            callback=self.toggle_cleanup)
         self.cleanup_item.state = int(self.engine.args.cleanup)
 
-        self.keys_menu = rumps.MenuItem("API-ключі")
+        self.keys_menu = rumps.MenuItem("API Keys")
         self.openai_key_item = rumps.MenuItem("OpenAI…", callback=lambda _: self.ask_key("openai"))
         self.anthropic_key_item = rumps.MenuItem("Anthropic (Claude)…",
                                                  callback=lambda _: self.ask_key("anthropic"))
         self.keys_menu.add(self.openai_key_item)
         self.keys_menu.add(self.anthropic_key_item)
         self.keys_menu.add(None)
-        self.keys_menu.add(rumps.MenuItem("Видалити всі ключі", callback=self.delete_keys))
+        self.keys_menu.add(rumps.MenuItem("Delete All Keys", callback=self.delete_keys))
         self._refresh_key_labels()
 
-        self.key_menu = rumps.MenuItem("Клавіша")
+        self.key_menu = rumps.MenuItem("Hotkey")
         for label, value in KEY_OPTIONS:
             item = rumps.MenuItem(label, callback=self._make_cb(self.set_key, value))
             item.state = int(value == self.s["key"])
             self.key_menu.add(item)
 
-        self.enter_item = rumps.MenuItem("Натискати Enter після вставки", callback=self.toggle_enter)
+        self.enter_item = rumps.MenuItem("Press Enter After Inserting", callback=self.toggle_enter)
         self.enter_item.state = int(self.s["enter"])
-        self.type_item = rumps.MenuItem("Друкувати посимвольно (замість Cmd+V)",
+        self.type_item = rumps.MenuItem("Type Characters (Instead of Cmd+V)",
                                         callback=self.toggle_type)
         self.type_item.state = int(self.s["mode"] == "type")
-        self.sounds_item = rumps.MenuItem("Звуки", callback=self.toggle_sounds)
+        self.sounds_item = rumps.MenuItem("Sounds", callback=self.toggle_sounds)
         self.sounds_item.state = int(self.s["sounds"])
 
-        self.login_item = rumps.MenuItem("Запускати при вході в систему", callback=self.toggle_login)
+        self.login_item = rumps.MenuItem("Launch at Login", callback=self.toggle_login)
         self.login_item.state = int(LAUNCH_AGENT.exists())
 
         self.menu = [
@@ -224,9 +224,9 @@ class WisperApp(rumps.App):
             self.sounds_item,
             None,
             self.login_item,
-            rumps.MenuItem("Словник…", callback=self.open_dictionary),
-            rumps.MenuItem("Відкрити лог", callback=self.open_log),
-            rumps.MenuItem("Вийти", callback=lambda _: rumps.quit_application()),
+            rumps.MenuItem("Dictionary…", callback=self.open_dictionary),
+            rumps.MenuItem("Open Log", callback=self.open_log),
+            rumps.MenuItem("Quit Wisper", callback=lambda _: rumps.quit_application()),
         ]
 
         self._last_state = None
@@ -261,11 +261,11 @@ class WisperApp(rumps.App):
             self.title = ICONS.get(state, "🎙")
             key = KEY_LABEL.get(self.s["key"], self.s["key"])
             self.status_item.title = {
-                "loading": "Завантаження моделі…",
-                "idle": f"Готово — тримай {key} · {self._engine_short()}",
-                "recording": "Запис… (Esc — скасувати)",
-                "busy": "Розпізнаю…",
-                "error": "Помилка — дивись лог",
+                "loading": "Loading model…",
+                "idle": f"Ready — hold {key} · {self._engine_short()}",
+                "recording": "Recording… (Esc to cancel)",
+                "busy": "Transcribing…",
+                "error": "Error — see log",
             }.get(state, state)
 
         ax = d.accessibility_trusted()
@@ -275,10 +275,10 @@ class WisperApp(rumps.App):
             was = self._last_trusted
             self._last_trusted = perms
             if ax and im:
-                self.perm_item.title = "✅ Дозволи: OK"
+                self.perm_item.title = "✅ Permissions: OK"
             else:
                 missing = [n for n, ok in (("Accessibility", ax), ("Input Monitoring", im)) if not ok]
-                self.perm_item.title = f"⚠️ Немає дозволу: {', '.join(missing)} — натисни"
+                self.perm_item.title = f"⚠️ Missing permission: {', '.join(missing)} — click to fix"
             # Permission just granted while running -> the old event tap is dead,
             # recreate it so the hotkey starts working without a relaunch.
             if was is not None and ax and im and was != perms:
@@ -317,7 +317,7 @@ class WisperApp(rumps.App):
     # --- engines, cleanup, API keys ---------------------------------------- #
     def _engine_short(self) -> str:
         e = self.engine.args.engine
-        name = "Whisper локально" if e == "local" else e
+        name = "local Whisper" if e == "local" else e
         return name + (" + Claude" if self.engine.args.cleanup else "")
 
     def _refresh_key_labels(self) -> None:
@@ -336,12 +336,12 @@ class WisperApp(rumps.App):
         except Exception:
             pass
         r = rumps.Window(
-            message=f"Встав API-ключ ({where}).\nВін зберігається в Keychain цього Мака "
-                    f"і нікуди не надсилається, крім {label}.",
+            message=f"Paste your API key ({where}).\nIt is stored in this Mac's Keychain "
+                    f"and only ever sent to {label}.",
             title=f"{label} API key",
             default_text="",
-            ok="Зберегти",
-            cancel="Скасувати",
+            ok="Save",
+            cancel="Cancel",
             dimensions=(380, 24),
             secure=True,
         ).run()
@@ -349,15 +349,15 @@ class WisperApp(rumps.App):
         if not r.clicked or not key:
             return False
         if name == "openai" and key.startswith("sk-ant-"):
-            rumps.alert("Wisper", "Схоже, це ключ Anthropic, а не OpenAI. Не збережено.")
+            rumps.alert("Wisper", "This looks like an Anthropic key, not an OpenAI key. Not saved.")
             return False
         if name == "anthropic" and not key.startswith("sk-ant-"):
-            rumps.alert("Wisper", "Ключі Anthropic починаються з «sk-ant-». Не збережено.")
+            rumps.alert("Wisper", "Anthropic keys start with \"sk-ant-\". Not saved.")
             return False
         try:
             cloud.set_key(name, key)
         except Exception as e:
-            rumps.alert("Wisper", f"Не вдалося зберегти ключ: {e}")
+            rumps.alert("Wisper", f"Could not save the key: {e}")
             return False
         d.log(f"{label} API key saved ({cloud.mask(key)})")
         self._refresh_key_labels()
@@ -426,8 +426,8 @@ class WisperApp(rumps.App):
             sender.state = 0
             return
         if not app_path:
-            rumps.alert("Wisper", "Автозапуск працює тільки коли Wisper запущено як застосунок "
-                                  "(Wisper.app), а не з терміналу.")
+            rumps.alert("Wisper", "Launch at login only works when Wisper runs as an app "
+                                  "(Wisper.app), not from the terminal.")
             return
         LAUNCH_AGENT.parent.mkdir(parents=True, exist_ok=True)
         LAUNCH_AGENT.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -446,7 +446,7 @@ class WisperApp(rumps.App):
     def fix_accessibility(self, _) -> None:
         ax, im = d.accessibility_trusted(), d.input_monitoring_granted()
         if ax and im:
-            rumps.alert("Wisper", "Усі дозволи вже є ✅")
+            rumps.alert("Wisper", "All permissions are granted ✅")
             return
         if not ax:
             request_accessibility_prompt()
@@ -461,9 +461,9 @@ class WisperApp(rumps.App):
             open_privacy_pane("Privacy_ListenEvent")
         rumps.alert(
             "Wisper",
-            "Увімкни Wisper у списку Accessibility (і в Input Monitoring).\n"
-            "Якщо Wisper вже там — видали його (−) і додай знову (+).\n"
-            "Потім перезапусти Wisper.",
+            "Enable Wisper in Accessibility (and in Input Monitoring).\n"
+            "If Wisper is already listed, remove it (−) and add it again (+).\n"
+            "Then restart Wisper.",
         )
 
     def copy_last(self, _) -> None:

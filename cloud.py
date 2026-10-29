@@ -31,10 +31,10 @@ CLEANUP_MODEL = "claude-haiku-5-5"
 
 # engine id -> menu label
 ENGINES = {
-    "local": "Локально — Whisper large (офлайн, безкоштовно)",
-    "gpt-4o-transcribe": "OpenAI gpt-4o-transcribe — найточніший (~$0.006/хв)",
-    "gpt-transcribe": "OpenAI gpt-transcribe (~$0.0045/хв)",
-    "gpt-4o-mini-transcribe": "OpenAI gpt-4o-mini-transcribe — найдешевший (~$0.003/хв)",
+    "local": "Local — Whisper large (offline, free)",
+    "gpt-4o-transcribe": "OpenAI gpt-4o-transcribe — most accurate (~$0.006/min)",
+    "gpt-transcribe": "OpenAI gpt-transcribe (~$0.0045/min)",
+    "gpt-4o-mini-transcribe": "OpenAI gpt-4o-mini-transcribe — cheapest (~$0.003/min)",
 }
 
 KEYCHAIN_SERVICE = "Wisper"
@@ -80,7 +80,7 @@ def delete_key(name: str) -> None:
 
 def mask(key: str | None) -> str:
     if not key:
-        return "не задано"
+        return "not set"
     return f"…{key[-4:]}"
 
 

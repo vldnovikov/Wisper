@@ -7,9 +7,17 @@ Local push-to-talk dictation for macOS (Apple Silicon). Hold a key, speak, relea
 - Menu-bar app with a status icon.
 - Local by default (no audio leaves your Mac); optional OpenAI cloud recognition and Claude text cleanup.
 
-## Download
+## Install
 
-Get the ready-to-use app from **[Releases](https://github.com/vldnovikov/whisper/releases/latest)** — download `Wisper.zip`, no Python or anything else needed. Install steps are in the release notes (macOS will block the first launch because the app isn't notarized: System Settings → Privacy & Security → **Open Anyway**).
+Open **Terminal** and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vldnovikov/whisper/main/install.sh | bash
+```
+
+It downloads the latest release, installs `Wisper.app` into Applications and launches it — no Python or anything else needed, and no "Apple could not verify…" dialog. Run the same command again to update.
+
+Prefer a manual download? Get `Wisper.zip` from **[Releases](https://github.com/vldnovikov/whisper/releases/latest)**. Because the app isn't notarized by Apple, macOS blocks the first launch of a browser-downloaded copy: click **Done**, then System Settings → Privacy & Security → **Open Anyway**.
 
 ## Requirements
 
@@ -52,7 +60,7 @@ macOS treats Wisper as a separate app, so grant the permissions to **Wisper** (S
 - **Accessibility** — needed to insert text
 - **Input Monitoring** — needed to detect the hotkey
 
-The ⚠️ permissions item at the top of the menu opens the right settings page. Wisper picks up newly granted permissions without a restart.
+The ⚠️ *Missing permission* item at the top of the menu opens the right settings page. Wisper picks up newly granted permissions without a restart.
 
 > Every rebuild with `build_app.sh` changes the app's signature, so macOS forgets the old grants. The script resets them; just enable Wisper again in Accessibility and Input Monitoring.
 
@@ -76,7 +84,7 @@ For the person installing it:
 
 ## Recognition engines and Claude cleanup
 
-Menu → **Розпізнавання** (Recognition) lets you pick how speech is turned into text:
+Menu → **Recognition** lets you pick how speech is turned into text:
 
 | Engine | Where it runs | Cost | Notes |
 |---|---|---|---|
@@ -85,9 +93,9 @@ Menu → **Розпізнавання** (Recognition) lets you pick how speech i
 | OpenAI `gpt-transcribe` | OpenAI cloud | ~$0.0045 / min | |
 | OpenAI `gpt-4o-mini-transcribe` | OpenAI cloud | ~$0.003 / min | cheapest cloud option |
 
-Menu → **Виправляти текст через Claude Haiku** (Fix text with Claude Haiku) sends the recognized *text* (never audio) to Claude Haiku, which fixes spelling, punctuation and Russian-style spellings without changing the meaning. Works with any engine; adds ~0.5–1 s.
+Menu → **Fix Text with Claude Haiku** sends the recognized *text* (never audio) to Claude Haiku, which fixes spelling, punctuation and Russian-style spellings without changing the meaning. Works with any engine; adds ~0.5–1 s.
 
-**API keys:** menu → **API-ключі** (API keys). Paste your OpenAI key (platform.openai.com) and/or Anthropic key (console.anthropic.com). Keys are stored in the macOS Keychain (service "Wisper"), never in files. Selecting a cloud engine or turning on cleanup without a key asks for it automatically.
+**API keys:** menu → **API Keys**. Paste your OpenAI key (platform.openai.com) and/or Anthropic key (console.anthropic.com). Keys are stored in the macOS Keychain (service "Wisper"), never in files. Selecting a cloud engine or turning on cleanup without a key asks for it automatically.
 
 If a cloud request fails (no internet, invalid key), Wisper falls back to local Whisper / the uncleaned text, so dictation keeps working. Details are in the log.
 
@@ -103,7 +111,7 @@ Wispr
 Kubernetes
 
 # Replacements — "what was recognized => what it should be" (whole words, case-insensitive)
-Віспар => Wispr
+whisper flow => Wispr Flow
 ```
 
 ## Publishing a release
