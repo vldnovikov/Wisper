@@ -54,7 +54,8 @@ HALLUCINATIONS = (
 
 # Whole-utterance outputs Whisper produces from breath/noise. Dropped only
 # when they are the *entire* result.
-HALLUCINATIONS_EXACT = {"thank you", "thanks", "you", "bye", "дякую", "спасибо"}
+HALLUCINATIONS_EXACT = {"thank you", "thanks", "you", "bye", "дякую", "спасибо",
+                        "um", "uh", "hmm", "mm", "ah", "eh"}
 
 # Kept deliberately short and content-free: Whisper tends to "continue" the
 # prompt, so meaningful phrases here leak into the transcript.
@@ -198,11 +199,26 @@ def resolve_hotkey(name: str):
         sys.exit(f"Unknown hotkey '{name}'. Valid names: {valid}")
 
 
+def strip_trailing_hallucination(text: str) -> str:
+    """Whisper sometimes appends an outro ("Дякую за перегляд!") to real
+    speech. Drop such trailing sentences; plain "Дякую." is kept."""
+    parts = re.split(r"(?<=[.!?…])\s+", text.strip())
+    while len(parts) > 1:
+        norm = re.sub(r"[^\w\s]", "", parts[-1].lower()).strip()
+        if norm and len(norm) < 60 and any(h in norm for h in HALLUCINATIONS):
+            parts.pop()
+        else:
+            break
+    return " ".join(parts)
+
+
 def is_hallucination(text: str) -> bool:
+    """True if the whole result is a typical Whisper hallucination (outro,
+    filler) rather than real speech that merely contains such words."""
     norm = re.sub(r"[^\w\s]", "", text.lower()).strip()
     if not norm or norm in HALLUCINATIONS_EXACT:
         return True
-    return len(norm) < 60 and any(h in norm for h in HALLUCINATIONS)
+    return any(h in norm and len(norm) <= len(h) + 12 for h in HALLUCINATIONS)
 
 
 # --------------------------------------------------------------------------- #
@@ -674,13 +690,25 @@ class App:
                 log(f"⚠️  {engine}: no OpenAI API key — using local Whisper")
             else:
                 langs = Transcriber.parse_langs(self.args.lang)
+                lang_hint = langs[0] if len(langs) == 1 else None
+                # Several allowed languages: let the local model pick one of
+                # them and pass it explicitly. Left to itself, the cloud model
+                # often hears accented Ukrainian as Russian.
+                if len(langs) > 1 and self.transcriber is not None:
+                    try:
+                        with self._model_lock:
+                            lang_hint = self.transcriber._detect_language(audio)
+                        p = self.transcriber.last_lang_probs
+                        probs_s = " (" + ", ".join(f"{k}={v:.2f}" for k, v in p.items()) + ")"
+                    except Exception as e:
+                        log(f"Language detection failed ({e}) — cloud will auto-detect")
                 try:
                     text = cloud.openai_transcribe(
                         audio, engine, key,
-                        language=langs[0] if len(langs) == 1 else None,
+                        language=lang_hint,
                         prompt=(", ".join(self.dictionary.vocab) or None),
                     )
-                    lang, used = "cloud", engine
+                    lang, used = f"cloud:{lang_hint or 'auto'}", engine
                 except Exception as e:
                     log(f"⚠️  {engine} failed ({e}) — using local Whisper")
         if text is None:
@@ -699,6 +727,10 @@ class App:
                 )
         dt = time.time() - t0
 
+        stripped = strip_trailing_hallucination(text)
+        if stripped != text:
+            log(f"Dropped trailing hallucination: {text[len(stripped):].strip()!r}")
+            text = stripped
         if is_hallucination(text):
             log(f"Dropped likely hallucination: {text!r}")
             return

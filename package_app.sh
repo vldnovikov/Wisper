@@ -13,6 +13,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 PY="$DIR/.venv/bin/python"
 VERSION="${WISPER_VERSION:-0.1}"
 VERSION="${VERSION#v}"   # tag "v0.2.0" -> "0.2.0"
+# Oldest macOS the app supports. Libraries are installed for it and the build
+# fails if any binary inside needs something newer (CI runs on a newer macOS).
+MIN_MACOS="13.0"
 DIST="$DIR/dist"
 APP="$DIST/Wisper.app"
 C="$APP/Contents"
@@ -22,10 +25,10 @@ RES="$C/Resources"
 "$PY" -c "import rumps, mlx_whisper, pynput, sounddevice" 2>/dev/null \
   || { echo "❌ Missing packages: source .venv/bin/activate && uv pip install -r requirements.txt"; exit 1; }
 command -v clang >/dev/null || { echo "❌ clang not found. Run: xcode-select --install"; exit 1; }
+command -v uv >/dev/null || { echo "❌ uv not found. Install it: brew install uv"; exit 1; }
 
 PYHOME="$("$PY" -c 'import sys; print(sys.base_prefix)')"
 PYVER="$("$PY" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
-VENV_SITE="$("$PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 [ -f "$PYHOME/lib/libpython$PYVER.dylib" ] || { echo "❌ Need a relocatable Python with libpython (uv's Python works)."; exit 1; }
 case "$PYHOME" in
   *Python.framework*)
@@ -48,12 +51,20 @@ rsync -a \
   --exclude "share" --exclude "__pycache__" \
   "$PYHOME/" "$RES/python/"
 
-echo "→ Copying packages (without torch — only needed for model conversion)"
-rsync -a \
-  --exclude "torch" --exclude "torch-*" --exclude "functorch" --exclude "torchgen" \
-  --exclude "pip" --exclude "pip-*" --exclude "uv" --exclude "uv-*" \
-  --exclude "_virtualenv*" --exclude "__pycache__" \
-  "$VENV_SITE/" "$RES/site-packages/"
+echo "→ Installing packages for macOS $MIN_MACOS+ (Apple Silicon)"
+# Not copied from .venv: those wheels are picked for the build machine's macOS
+# (e.g. mlx for macOS 15 only). Resolve them for the oldest supported macOS.
+MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" uv pip install --quiet \
+  --python "$PY" \
+  --python-platform aarch64-apple-darwin \
+  --target "$RES/site-packages" \
+  -r "$DIR/requirements.txt"
+# torch is only needed to convert models, never at runtime (~300 MB).
+rm -rf "$RES/site-packages"/torch "$RES/site-packages"/torch-* \
+       "$RES/site-packages"/functorch "$RES/site-packages"/torchgen \
+       "$RES/site-packages"/bin
+find "$RES/site-packages" -name "__pycache__" -type d -prune -exec rm -rf {} +
+echo "   mlx $(cd "$RES/site-packages" && ls -d mlx-*.dist-info | sed 's/mlx-//; s/.dist-info//')"
 
 echo "→ Copying app code"
 cp "$DIR/dictate.py" "$DIR/menubar.py" "$DIR/cloud.py" "$RES/app/"
@@ -103,7 +114,7 @@ cat > "$C/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>Wisper</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
   <key>LSArchitecturePriority</key><array><string>arm64</string></array>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
@@ -178,7 +189,7 @@ int main(int argc, char **argv) {
 }
 CSRC
 
-clang -O2 "$TMPC/launcher.c" -o "$C/MacOS/Wisper" \
+clang -O2 -mmacosx-version-min="$MIN_MACOS" "$TMPC/launcher.c" -o "$C/MacOS/Wisper" \
   -I"$RES/python/include/python$PYVER" \
   -L"$RES/python/lib" -lpython"$PYVER" \
   -Wl,-rpath,@executable_path/../Resources/python/lib
@@ -241,13 +252,30 @@ xattr -cr "$APP"   # strip stray attributes (provenance, quarantine, Finder info
 # Sign every Mach-O file inside (libraries, extensions, the bundled python),
 # deepest first, then the app itself. Never sign non-Mach-O files.
 MACHO_COUNT=0
+TOO_NEW_FILE="$(mktemp)"
 while IFS= read -r -d '' f; do
   if file -b "$f" | grep -q "Mach-O"; then
     codesign --force --sign - "$f"
     MACHO_COUNT=$((MACHO_COUNT + 1))
+    # Minimum macOS the binary was built for (LC_BUILD_VERSION / LC_VERSION_MIN_MACOSX)
+    minos="$(otool -l "$f" 2>/dev/null | awk '
+      /LC_BUILD_VERSION/ {b=1} b && $1=="minos" {print $2; exit}
+      /LC_VERSION_MIN_MACOSX/ {m=1} m && $1=="version" {print $2; exit}')"
+    if [ -n "$minos" ] && [ "${minos%%.*}" -gt "${MIN_MACOS%%.*}" ]; then
+      echo "${f#"$APP"/} needs macOS $minos" >> "$TOO_NEW_FILE"
+    fi
   fi
-done < <(find "$RES" -type f \( -name "*.so" -o -name "*.dylib" -o -perm +111 \) -print0)
+done < <(find "$APP" -type f \( -name "*.so" -o -name "*.dylib" -o -perm +111 \) ! -path "*/Contents/MacOS/*" -print0)
 echo "   signed $MACHO_COUNT inner binaries"
+LAUNCHER_MINOS="$(otool -l "$C/MacOS/Wisper" | awk '/LC_BUILD_VERSION/{b=1} b&&$1=="minos"{print $2; exit}')"
+if [ "${LAUNCHER_MINOS%%.*}" -gt "${MIN_MACOS%%.*}" ]; then
+  echo "Contents/MacOS/Wisper needs macOS $LAUNCHER_MINOS" >> "$TOO_NEW_FILE"
+fi
+if [ -s "$TOO_NEW_FILE" ]; then
+  echo "❌ These binaries won't run on macOS $MIN_MACOS:"; head -20 "$TOO_NEW_FILE"; exit 1
+fi
+rm -f "$TOO_NEW_FILE"
+echo "   all binaries run on macOS $MIN_MACOS+"
 codesign --force --sign - --identifier com.vnovikov.wisper "$APP"
 codesign --verify --deep --strict "$APP" && echo "   signature ok"
 
