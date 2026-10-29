@@ -71,7 +71,7 @@ LOG_PATH = Path.home() / "Library/Logs/Wisper.log"
 LAUNCH_AGENT = Path.home() / "Library/LaunchAgents/com.vnovikov.wisper.plist"
 
 DEFAULTS = {
-    "model": "large",
+    "local_model": "auto",
     "lang": "uk,en",
     "enter": False,
     "mode": "paste",
@@ -97,8 +97,9 @@ LANG_OPTIONS = [
     ("Any language (auto-detect)", ""),
 ]
 MODEL_OPTIONS = [
-    ("Turbo — fast", "turbo"),
-    ("Large — more accurate, slower", "large"),
+    ("Auto (by memory)", "auto"),
+    ("Large — most accurate, needs 16 GB RAM", "large"),
+    ("Turbo — fast, fine for 8 GB RAM", "turbo"),
 ]
 KEY_OPTIONS = [
     ("Right Option ⌥", "alt_r"),
@@ -146,10 +147,11 @@ class WisperApp(rumps.App):
     def __init__(self) -> None:
         super().__init__(APP_NAME, title=ICONS["loading"], quit_button=None)
         self.s = load_settings()
-        self.s["model"] = "large"  # only the large model is used
+        if self.s.get("local_model") not in ("auto", "large", "turbo"):
+            self.s["local_model"] = "auto"
 
         args = d.build_parser().parse_args([])
-        args.model = d.MODEL_ALIASES.get(self.s["model"], self.s["model"])
+        args.model = d.resolve_model(self.s["local_model"])
         args.lang = self.s["lang"]
         args.enter = self.s["enter"]
         args.mode = self.s["mode"]
@@ -177,6 +179,14 @@ class WisperApp(rumps.App):
             item = rumps.MenuItem(label, callback=self._make_cb(self.set_engine, value))
             item.state = int(value == self.engine.args.engine)
             self.engine_menu.add(item)
+
+        self.model_menu = rumps.MenuItem("Local Model")
+        for label, value in MODEL_OPTIONS:
+            if value == "auto":
+                label = f"Auto — {d.auto_model()} for this Mac ({d.ram_gb():.0f} GB RAM)"
+            item = rumps.MenuItem(label, callback=self._make_cb(self.set_model, value))
+            item.state = int(value == self.s["local_model"])
+            self.model_menu.add(item)
 
         self.cleanup_item = rumps.MenuItem("Fix Text with Claude Haiku",
                                            callback=self.toggle_cleanup)
@@ -219,6 +229,7 @@ class WisperApp(rumps.App):
             self.last_item,
             None,
             self.engine_menu,
+            self.model_menu,
             self.cleanup_item,
             self.keys_menu,
             None,
@@ -304,12 +315,15 @@ class WisperApp(rumps.App):
         self.engine.set_languages(value)
 
     def set_model(self, sender, value: str) -> None:
-        if value == self.s["model"]:
+        if value == self.s["local_model"]:
             return
         self._check_only(self.model_menu, sender)
-        self.s["model"] = value
+        self.s["local_model"] = value
         self._save()
-        threading.Thread(target=self.engine.load_model, args=(value,), daemon=True).start()
+        repo = d.resolve_model(value)
+        if repo != self.engine.args.model:
+            d.log(f"Local model: {value} -> {repo}")
+            threading.Thread(target=self.engine.load_model, args=(repo,), daemon=True).start()
 
     def set_key(self, sender, value: str) -> None:
         self._check_only(self.key_menu, sender)
@@ -323,7 +337,9 @@ class WisperApp(rumps.App):
     # --- engines, cleanup, API keys ---------------------------------------- #
     def _engine_short(self) -> str:
         e = self.engine.args.engine
-        name = "local Whisper" if e == "local" else e
+        local = "large" if "large-v3-mlx" in self.engine.args.model else (
+            "turbo" if "turbo" in self.engine.args.model else self.engine.args.model.split("/")[-1])
+        name = f"Whisper {local}" if e == "local" else e
         return name + (" + Claude" if self.engine.args.cleanup else "")
 
     def _refresh_key_labels(self) -> None:

@@ -90,10 +90,12 @@ Menu → **Recognition** lets you pick how speech is turned into text:
 
 | Engine | Where it runs | Cost | Notes |
 |---|---|---|---|
-| Local — Whisper large | on your Mac | free | default, works offline, audio never leaves the Mac |
+| Local — Whisper | on your Mac | free | default, works offline, audio never leaves the Mac |
 | OpenAI `gpt-4o-transcribe` | OpenAI cloud | ~$0.006 / min | most accurate, best with mixed Ukrainian/English |
 | OpenAI `gpt-transcribe` | OpenAI cloud | ~$0.0045 / min | |
 | OpenAI `gpt-4o-mini-transcribe` | OpenAI cloud | ~$0.003 / min | cheapest cloud option |
+
+Menu → **Local Model** chooses the on-device Whisper model. **Auto** (default) picks `large` (most accurate, ~3 GB) on Macs with 16 GB of RAM or more and `turbo` (about 2–3× faster, ~1.6 GB) on 8 GB Macs, where `large` would push the system into swap and become very slow. The model is downloaded on first use.
 
 Menu → **Fix Text with Claude Haiku** sends the recognized *text* (never audio) to Claude Haiku, which fixes spelling, punctuation and Russian-style spellings without changing the meaning. Works with any engine; adds ~0.5–1 s.
 
@@ -139,7 +141,7 @@ When running this way, grant Microphone / Accessibility / Input Monitoring to yo
 |---|---|
 | `--key alt_r` | hotkey to hold: `alt_r`, `ctrl_r`, `cmd_r`, `shift_r`, `f13`… |
 | `--lang uk,en` | allowed languages (default `uk,en` — the model picks one of them per phrase). `--lang uk` = always Ukrainian, `--lang ""` = any language |
-| `--model large` | `large` (default, most accurate, ~3 GB), `turbo` (faster, ~1.6 GB), `medium`, `small`, or any MLX Whisper repo on Hugging Face |
+| `--model auto` | `auto` (default: `large` on Macs with 16 GB+ RAM, `turbo` otherwise), `large` (most accurate, ~3 GB), `turbo` (fast, ~1.6 GB), `medium`, `small`, or any MLX Whisper repo on Hugging Face |
 | `--enter` | press Enter after inserting the text |
 | `--mode type` | type character by character instead of pasting with Cmd+V |
 | `--prompt "..."` | extra vocabulary hints for Whisper |

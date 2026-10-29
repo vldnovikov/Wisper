@@ -168,6 +168,26 @@ class Dictionary:
         return text
 
 
+def ram_gb() -> float:
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3
+    except (ValueError, OSError, AttributeError):
+        return 0.0
+
+
+def auto_model() -> str:
+    """large-v3 needs ~4-5 GB while running; on 8 GB Macs that means swapping
+    and very slow transcription, so smaller Macs get turbo (~2 GB)."""
+    return "large" if ram_gb() >= 15 else "turbo"
+
+
+def resolve_model(choice: str) -> str:
+    """'auto' / alias / HF repo -> HF repo."""
+    if choice == "auto":
+        choice = auto_model()
+    return MODEL_ALIASES.get(choice, choice)
+
+
 MODEL_ALIASES = {
     "turbo": "mlx-community/whisper-large-v3-turbo",  # ~1.6 GB, fastest of the large ones
     "large": "mlx-community/whisper-large-v3-mlx",    # ~3 GB, most accurate, ~2-4x slower
@@ -610,7 +630,7 @@ class App:
         """Blocking. Call from a background thread in the GUI."""
         with self._model_lock:
             if model:
-                self.args.model = MODEL_ALIASES.get(model, model)
+                self.args.model = resolve_model(model)
             self._set_state("loading")
             log(f"Loading model {self.args.model} (first run downloads it)…")
             t0 = time.time()
@@ -821,9 +841,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Local push-to-talk dictation for macOS")
     p.add_argument("--key", default="alt_r",
                    help="hotkey to hold (pynput Key name): alt_r, ctrl_r, cmd_r, shift_r, f13… (default: alt_r = Right Option)")
-    p.add_argument("--model", default="large",
-                   help="turbo | large | medium | small, or any MLX Whisper repo on Hugging Face "
-                        "(default: large)")
+    p.add_argument("--model", default="auto",
+                   help="auto | large | turbo | medium | small, or any MLX Whisper repo on "
+                        "Hugging Face (default: auto = large on 16 GB+ RAM, turbo otherwise)")
     p.add_argument("--lang", default="uk,en",
                    help="allowed languages, comma-separated. One = fixed language; "
                         "several = auto-pick among them; '' = any language. Default: uk,en")
@@ -854,7 +874,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    args.model = MODEL_ALIASES.get(args.model, args.model)
+    args.model = resolve_model(args.model)
 
     if sys.platform != "darwin":
         sys.exit("This prototype is macOS-only.")
