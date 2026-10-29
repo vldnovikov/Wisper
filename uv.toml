@@ -1,0 +1,4 @@
+# Always use uv's own relocatable Python builds (python-build-standalone),
+# never a system / python.org framework Python: package_app.sh bundles the
+# interpreter into Wisper.app and needs it to be self-contained.
+python-preference = "only-managed"

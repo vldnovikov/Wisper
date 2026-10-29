@@ -27,6 +27,12 @@ PYHOME="$("$PY" -c 'import sys; print(sys.base_prefix)')"
 PYVER="$("$PY" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
 VENV_SITE="$("$PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
 [ -f "$PYHOME/lib/libpython$PYVER.dylib" ] || { echo "❌ Need a relocatable Python with libpython (uv's Python works)."; exit 1; }
+case "$PYHOME" in
+  *Python.framework*)
+    echo "❌ .venv uses a framework Python ($PYHOME), which can't be bundled."
+    echo "   Recreate it with uv's own Python: rm -rf .venv && uv venv -p 3.12 --python-preference only-managed"
+    exit 1;;
+esac
 
 echo "→ Cleaning dist/"
 rm -rf "$APP" "$DIST/Wisper.zip"
@@ -260,14 +266,20 @@ fi
 if ! WISPER_SELFTEST=1 "$CHECK/Wisper.app/Contents/MacOS/Wisper"; then
   echo "❌ Unzipped app failed the self-test:"; tail -40 ~/Library/Logs/Wisper.log 2>/dev/null; exit 1
 fi
-BAD_LINKS="$(find "$CHECK/Wisper.app" -type l | while read -r l; do
-  t="$(cd "$(dirname "$l")" && readlink "$l")"
-  case "$t" in /*) echo "$l -> $t";; esac
-  [ -e "$l" ] || echo "$l -> $t (dangling)"
-done)"
-if [ -n "$BAD_LINKS" ]; then
-  echo "❌ Symlinks that won't exist on other Macs:"; echo "$BAD_LINKS" | head -20; exit 1
+# (no case/$(...) here: macOS ships bash 3.2, which can't parse case inside $())
+BAD_LINKS_FILE="$(mktemp)"
+find "$CHECK/Wisper.app" -type l -print0 | while IFS= read -r -d '' l; do
+  t="$(readlink "$l")"
+  if [[ "$t" == /* ]]; then
+    echo "$l -> $t (absolute)" >> "$BAD_LINKS_FILE"
+  elif [ ! -e "$l" ]; then
+    echo "$l -> $t (dangling)" >> "$BAD_LINKS_FILE"
+  fi
+done
+if [ -s "$BAD_LINKS_FILE" ]; then
+  echo "❌ Symlinks that won't exist on other Macs:"; head -20 "$BAD_LINKS_FILE"; exit 1
 fi
+rm -f "$BAD_LINKS_FILE"
 rm -rf "$CHECK"
 echo "   unzipped copy: signature ok, self-test ok, no external symlinks"
 
